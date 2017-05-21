@@ -1,25 +1,237 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+title: '"Reproducible Research: Peer Assessment 1"'
+author: "Nsi J."
+date: "20 mai 2017"
+output: html_document
 ---
 
+# Set the work directory
 
-## Loading and preprocessing the data
+```{r Set the work directory}
+rm(list=ls()) 
+WD <- getwd()
+if (!is.null(WD)) setwd(WD)
+(echo = TRUE)
+```
+
+# Download and unzip data
+```{r Set get the data}
+url <- 'https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip'
+
+if (!file.exists("data")) dir.create("data")
+if (!file.exists("activity.zip")) download.file(url, destfile = "data/activity.zip", mode="wb")
+if (!file.exists("activity.csv")) unzip("activity.zip", exdir="./data")
+
+```      
+#   Code for reading in the dataset and/or processing the data
+```{r read the file ane process the data}
+activity_raw <- read.csv("activity.csv", header = TRUE, 
+sep = ',',stringsAsFactors=FALSE)
+
+# Process/transform the data (if necessary) into a format suitable for analysis
+activity_raw$date <- as.POSIXct(activity_raw$date, format="%Y-%m-%d")
+
+#Set the language
+Sys.setlocale(category = "LC_ALL", locale = "english")
+
+# Compute the weekdays from the date attribute
+activity_raw <- data.frame(date=activity_raw$date, 
+                           weekday=tolower(weekdays(activity_raw$date)), 
+                           steps=activity_raw$steps, 
+                           interval=activity_raw$interval)
+
+# Compute the day type (weekend or weekday)
+library(plyr)
+activity_raw <-mutate(activity_raw, daytype=ifelse(activity_raw$weekday == "saturday" | activity_raw$weekday == "sunday", "weekend","weekday"))
+
+# Create the tidy data.frame
+activity_tidy <- data.frame(date=activity_raw$date, 
+                       weekday=activity_raw$weekday, 
+                       daytype=activity_raw$daytype, 
+                       interval=activity_raw$interval,
+                       steps=activity_raw$steps) 
+rm(activity_raw)
+(echo=TRUE) 
+```
+     
+#   What is mean total number of steps taken per day?
+
+```{r Sum steps by day, create Histogram, compute mean and median  Plot1.png}  
+# Calculate the total number of steps per day using dplyr and group by date
+
+# load library
+library(dtplyr)
+library(knitr)
+library(lubridate)
+library(ggplot2)  
+library(dplyr)
+
+steps_by_day <- aggregate(steps ~ date, activity_tidy, sum)
+hist(steps_by_day$steps, main = paste("Total Steps Each Day"), col="blue", xlab="Number of Steps")
+
+#Copy the plot from the screen to a png file
+dev.copy(png, file="Plot1.png") 
+
+#Close the device to view the file
+dev.off()
+
+#32 Calculate mean and median
+mean(steps_by_day$steps, na.rm=TRUE)
+#[1] 10766.19
+median(steps_by_day$steps, na.rm=TRUE)
+#[1] 10765
+#Mean steps are 10766 and median steps are 10765
+
+#Check the results of the mean and median
+summary(steps_by_day)
+(echo=TRUE)
+
+```
+#  What is the average daily activity pattern?  
+```{r Time series plot of the average number of steps taken  Plot2.png}
+# Compute the means of steps accross all days for each interval
+mean_data <- aggregate(activity_tidy$steps, 
+                       by=list(activity_tidy$interval), 
+                       FUN=mean, 
+                       na.rm=TRUE)
+
+# Check mean_data
+str(mean_data)
+
+# Rename the attributes
+names(mean_data) <- c("interval", "mean")
+
+#Check mean_data with the new attributes
+# head(mean_data)
+# str(mean_data)
+
+#  Create the plot of the average number of steps taken
+plot(mean_data$interval, 
+     mean_data$mean, 
+     type="l", 
+     col="red", 
+     lwd=2, 
+     xlab="Interval [minutes]", 
+     ylab="Average number of steps", 
+     main="Time-series of the average number of steps per intervals")
+     
+#  Copy the plot from the screen to a png file
+dev.copy(png, file="Plot2.png") 
+
+# Close the device to view the file
+dev.off()
+
+#  The 5-minute interval that, on average, contains the maximum number of steps
+#  Position of the maximum mean
+max_pos <- which(mean_data$mean == max(mean_data$mean))
+#str(max_pos)
+#int 104
+
+# We lookup the value of interval at this position
+max_interval <- mean_data[max_pos, 1]
+
+#str(max_interval)
+#int 835
+#  The 5-minute interval that contains the maximum of steps, on average across all days, is 835
+(echo=TRUE)
+```   
+```{r Code to describe and show a strategy for imputing missing data}
 
 
+# Count the total number of missing data
 
-## What is mean total number of steps taken per day?
+NA_total <- sum(is.na(activity_tidy$steps))
+str(NA_total)
+#int 2304
+#The number of NA's is 2304
+
+#  Compute the percentage of Na data
+percentage_na <- mean(is.na(activity_tidy$steps)) 
+percentage_na
+#[1] 0.1311475
+
+#About 13% of NA data
+
+# Strategy or filling in all of the missing values in the dataset : use the mean/median for that day, or the mean for that 5-minute interval
+
+# Find where are NA
+na_position <- which(is.na(activity_tidy$steps))
+
+# str(na_position)
+# int [1:2304] 1 2 3 4 5 6 7 8 9 10 ...
+
+# The strategy used is to remplace each NA value by the mean of the steps attribute.
+
+# Create a vector linked to mean
+
+mean_vec <- rep(mean(activity_tidy$steps, na.rm=TRUE), times=length(na_position))
+
+# Create a new data set with NA off, each NA replaced by the mean of the steps attribute
+activity_tidy[na_position, "steps"] <- mean_vec
+
+# head(activity_tidy)
+
+# Check that there are no missing values
+sum(is.na(activity_tidy$step))
+#[1] 0
+(echo=TRUE)
+```   
+# Histogram of the total number of steps taken each day after missing values are imputed  
+```{r Code to compute total number of steps each day (NA values removed) and histogramme Plot3.png}
+
+# Compute the total number of steps each day (NA values removed)
+sum_data <- aggregate(steps ~ date, activity_tidy, sum)
+# head(sum_data)
 
 
+# Compute the histogram of the total number of steps each day
+hist(sum_data$steps, main = paste("Total Steps Each Day(NA values removed) "), col="red", xlab="Number of Steps")
 
-## What is the average daily activity pattern?
+#  Copy the plot from the screen to a png file
+dev.copy(png, file="Plot3.png") 
+
+#  Close the device to view the file
+dev.off()
+
+#  Compute the mean and median
+mean(sum_data$steps)
+median(sum_data$steps)
+summary(sum_data$steps)
+#  #Mean steps are 10766 and median steps are 10766 : the same value for both
+(echo=TRUE)
+```       
+
+#  Are there differences in activity patterns between weekdays and weekends?  
+```{r Panel plot comparing the average number of steps taken per 5-minute      interval across weekdays and weekends Plot4.png}
+
+#  Create a factor variable that states whether each day is a weekday or weekend see the part of process data with daytypecreated there
 
 
+#  Create a panel plot containing a time series plot (i.e. type = "l") of the 5- minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis)
 
-## Imputing missing values
+#  Compute the average number of steps taken, averaged across all daytype variable
+mean_data <- aggregate(activity_tidy$steps, 
+            by=list(activity_tidy$daytype, 
+            activity_tidy$weekday, activity_tidy$interval), mean)
+# head(mean_data)
+#822. Rename the attributes
+library(lattice)
 
+names(mean_data) <- c("daytype", "weekday", "interval", "mean")
+head(mean_data)
 
+xyplot(mean ~ interval | daytype, mean_data, 
+       type="l", 
+       lwd=1, 
+       xlab="Interval", 
+       ylab="Number of steps", 
+       main="Average Steps per Day by Interval",
+       layout=c(1,2))
 
-## Are there differences in activity patterns between weekdays and weekends?
+#Copy the plot from the screen to a png file
+dev.copy(png, file="Plot4.png") 
+
+#Close the device to view the file
+dev.off()
+(echo=TRUE)
+```        
